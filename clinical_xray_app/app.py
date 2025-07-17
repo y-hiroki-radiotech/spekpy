@@ -316,9 +316,15 @@ def display_results():
             return "N/A"
     
     with col1:
-        st.metric("ESAK", 
-                  safe_format(results.get('esak_mgy', 0), 3, "mGy"),
-                  help="Entrance Surface Air Kerma")
+        # BSFが有効な場合はIAKとして表示、無効な場合はESAKとして表示
+        if 'bsf' in results and 'field_size_cm' in results.get('parameters', {}):
+            st.metric("IAK", 
+                      safe_format(results.get('esak_mgy', 0), 3, "mGy"),
+                      help="Incident Air Kerma (照射空気カーマ)")
+        else:
+            st.metric("ESAK", 
+                      safe_format(results.get('esak_mgy', 0), 3, "mGy"),
+                      help="Entrance Surface Air Kerma")
     
     with col2:
         st.metric("HVL1 (Al)", 
@@ -337,24 +343,36 @@ def display_results():
     
     # Show BSF information if available
     if 'bsf' in results and 'esak_with_bsf_mgy' in results:
-        st.markdown("### ⚡ Backscatter Factor (BSF) Results")
-        col1, col2, col3 = st.columns(3)
+        st.markdown("### ⚡ 後方散乱係数（BSF）補正結果")
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("BSF", 
-                      safe_format(results.get('bsf', 1.0), 3),
-                      help="Backscatter Factor for water phantom")
-        
-        with col2:
-            st.metric("ESAK with BSF", 
-                      safe_format(results.get('esak_with_bsf_mgy', 0), 3, "mGy"),
-                      help="ESAK including backscatter correction")
-        
-        with col3:
             field_size = results.get('parameters', {}).get('field_size_cm', 'N/A')
-            st.metric("Field Size", 
+            st.metric("照射野サイズ", 
                       f"{field_size} cm" if field_size != 'N/A' else "N/A",
                       help="Field diameter at SSD")
+        
+        with col2:
+            st.metric("BSF", 
+                      safe_format(results.get('bsf', 1.0), 3),
+                      help="水ファントムでの後方散乱係数")
+        
+        with col3:
+            st.metric("ESAK", 
+                      safe_format(results.get('esak_with_bsf_mgy', 0), 3, "mGy"),
+                      help="BSF補正後のEntrance Surface Air Kerma")
+        
+        with col4:
+            # Calculate the BSF correction percentage
+            iak = results.get('esak_mgy', 0)
+            esak_bsf = results.get('esak_with_bsf_mgy', 0)
+            if iak > 0:
+                increase_percent = ((esak_bsf - iak) / iak) * 100
+                st.metric("補正率", 
+                          f"+{increase_percent:.1f}%",
+                          help="BSF補正による線量増加率")
+            else:
+                st.metric("補正率", "N/A", help="BSF補正による線量増加率")
     
     # Detailed results
     tab1, tab2, tab3, tab4 = st.tabs(["📈 Spectrum Plot", "📋 Detailed Results", 
@@ -479,18 +497,23 @@ def display_detailed_results():
             return f"{value:.{precision}f} {unit}".strip()
         return str(value)
     
-    result_data = [
-        ["ESAK", format_numeric(results.get('esak_mgy'), 3, "mGy")],
-        ["Air Kerma per mAs", format_numeric(results.get('kerma_per_mas_ugy'), 2, "µGy/mAs")],
-        ["Distance Correction Factor", format_numeric(results.get('distance_correction'), 3)],
-    ]
+    # BSFが有効な場合は表記を変更
+    has_bsf = 'bsf' in results and 'field_size_cm' in results.get('parameters', {})
     
-    # Add BSF results if available
-    if 'bsf' in results:
-        result_data.extend([
+    if has_bsf:
+        result_data = [
+            ["IAK (照射空気カーマ)", format_numeric(results.get('esak_mgy'), 3, "mGy")],
+            ["Air Kerma per mAs", format_numeric(results.get('kerma_per_mas_ugy'), 2, "µGy/mAs")],
+            ["Distance Correction Factor", format_numeric(results.get('distance_correction'), 3)],
             ["Backscatter Factor (BSF)", format_numeric(results.get('bsf'), 3)],
-            ["ESAK with BSF", format_numeric(results.get('esak_with_bsf_mgy'), 3, "mGy")]
-        ])
+            ["ESAK (BSF補正後)", format_numeric(results.get('esak_with_bsf_mgy'), 3, "mGy")]
+        ]
+    else:
+        result_data = [
+            ["ESAK", format_numeric(results.get('esak_mgy'), 3, "mGy")],
+            ["Air Kerma per mAs", format_numeric(results.get('kerma_per_mas_ugy'), 2, "µGy/mAs")],
+            ["Distance Correction Factor", format_numeric(results.get('distance_correction'), 3)],
+        ]
     
     st.subheader("Beam Quality Parameters")
     
