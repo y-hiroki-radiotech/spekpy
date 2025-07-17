@@ -67,9 +67,10 @@ paper_and_book/
 spekpy_wiki.pdf
 cover_caxtus.jpg
 license.txt
+CLAUDE.md
+.ipynb_checkpoints/
 
 # Keep only clinical_xray_app directory and core project files
 !clinical_xray_app/
-!CLAUDE.md
 !README.md
 
