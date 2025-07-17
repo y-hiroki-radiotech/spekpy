@@ -276,24 +276,33 @@ def display_results():
     
     col1, col2, col3, col4 = st.columns(4)
     
+    def safe_format(value, precision=3, unit=""):
+        """Safely format numeric values for display."""
+        try:
+            if isinstance(value, (int, float)) and not (value != value):  # Check for NaN
+                return f"{value:.{precision}f} {unit}".strip()
+            return "N/A"
+        except:
+            return "N/A"
+    
     with col1:
         st.metric("ESAK", 
-                  f"{results.get('esak_mgy', 0):.3f} mGy",
+                  safe_format(results.get('esak_mgy', 0), 3, "mGy"),
                   help="Entrance Surface Air Kerma")
     
     with col2:
         st.metric("HVL1 (Al)", 
-                  f"{results.get('hvl1_al_mm', 0):.2f} mm",
+                  safe_format(results.get('hvl1_al_mm', 0), 2, "mm"),
                   help="First Half Value Layer in Aluminum")
     
     with col3:
         st.metric("Mean Energy", 
-                  f"{results.get('mean_energy_kev', 0):.1f} keV",
+                  safe_format(results.get('mean_energy_kev', 0), 1, "keV"),
                   help="Mean energy of the X-ray spectrum")
     
     with col4:
         st.metric("Air Kerma/mAs", 
-                  f"{results.get('kerma_per_mas_ugy', 0):.2f} µGy",
+                  safe_format(results.get('kerma_per_mas_ugy', 0), 2, "µGy"),
                   help="Air kerma per mAs at 100 cm")
     
     # Detailed results
@@ -408,23 +417,35 @@ def display_detailed_results():
     # Results table
     st.subheader("Dosimetric Results")
     
+    def format_numeric(value, precision=2, unit=""):
+        """Format numeric value with fallback for non-numeric values."""
+        if isinstance(value, (int, float)):
+            return f"{value:.{precision}f} {unit}".strip()
+        return str(value)
+    
     result_data = [
-        ["ESAK", f"{results.get('esak_mgy', 'N/A'):.3f} mGy"],
-        ["Air Kerma per mAs", f"{results.get('kerma_per_mas_ugy', 'N/A'):.2f} µGy/mAs"],
-        ["Distance Correction Factor", f"{results.get('distance_correction', 'N/A'):.3f}"],
+        ["ESAK", format_numeric(results.get('esak_mgy'), 3, "mGy")],
+        ["Air Kerma per mAs", format_numeric(results.get('kerma_per_mas_ugy'), 2, "µGy/mAs")],
+        ["Distance Correction Factor", format_numeric(results.get('distance_correction'), 3)],
     ]
     
     st.subheader("Beam Quality Parameters")
     
+    def format_scientific(value, unit=""):
+        """Format value in scientific notation with fallback."""
+        if isinstance(value, (int, float)):
+            return f"{value:.2e} {unit}".strip()
+        return str(value)
+    
     quality_data = [
-        ["HVL1 (Al)", f"{results.get('hvl1_al_mm', 'N/A'):.2f} mm"],
-        ["HVL2 (Al)", f"{results.get('hvl2_al_mm', 'N/A'):.2f} mm"],
-        ["HVL1 (Cu)", f"{results.get('hvl1_cu_mm', 'N/A'):.3f} mm"],
-        ["Mean Energy", f"{results.get('mean_energy_kev', 'N/A'):.1f} keV"],
-        ["Effective Energy", f"{results.get('effective_energy_kev', 'N/A'):.1f} keV"],
-        ["Homogeneity Coefficient", f"{results.get('homogeneity_coefficient', 'N/A'):.3f}"],
-        ["Total Fluence", f"{results.get('total_fluence', 'N/A'):.2e} cm⁻²"],
-        ["Energy Fluence", f"{results.get('energy_fluence_kev', 'N/A'):.2e} keV·cm⁻²"],
+        ["HVL1 (Al)", format_numeric(results.get('hvl1_al_mm'), 2, "mm")],
+        ["HVL2 (Al)", format_numeric(results.get('hvl2_al_mm'), 2, "mm")],
+        ["HVL1 (Cu)", format_numeric(results.get('hvl1_cu_mm'), 3, "mm")],
+        ["Mean Energy", format_numeric(results.get('mean_energy_kev'), 1, "keV")],
+        ["Effective Energy", format_numeric(results.get('effective_energy_kev'), 1, "keV")],
+        ["Homogeneity Coefficient", format_numeric(results.get('homogeneity_coefficient'), 3)],
+        ["Total Fluence", format_scientific(results.get('total_fluence'), "cm⁻²")],
+        ["Energy Fluence", format_scientific(results.get('energy_fluence_kev'), "keV·cm⁻²")],
     ]
     
     result_df = pd.DataFrame(result_data, columns=["Parameter", "Value"])
