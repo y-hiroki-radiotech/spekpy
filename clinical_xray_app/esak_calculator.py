@@ -169,6 +169,8 @@ class ESAKCalculator:
             
         except Exception as e:
             print(f"Error calculating ESAK: {e}")
+            import traceback
+            traceback.print_exc()
             return 0.0
     
     def calculate_bsf(self) -> float:
@@ -178,27 +180,42 @@ class ESAKCalculator:
         Returns:
             BSF value (typically 1.0-1.5)
         """
+        print(f"Starting BSF calculation...")
+        print(f"Parameters: {self.parameters}")
+        
         if sp is None or RegularGridInterpolator is None:
             print("Warning: SpekPy or SciPy not available for BSF calculation")
             return 1.0  # Default to no backscatter correction
         
         if self.spectrum is None:
+            print("Generating spectrum for BSF calculation...")
             if not self.generate_spectrum():
+                print("Failed to generate spectrum")
                 return 1.0
         
         try:
             # Get field parameters
             field_size = self.parameters.get('field_size_cm', 10.0)
             ssd = self.parameters.get('ssd_cm', 100.0)
+            print(f"BSF parameters: field_size={field_size} cm, ssd={ssd} cm")
             
             # Load BSF data from SpekPy tutorial directory
-            bsf_data_path = os.path.join(
-                os.path.dirname(__file__), 
-                '../9_Kilovoltage x-ray beam dosimetry/monoBSFw.npz'
-            )
+            # Try multiple possible paths for the BSF data file
+            possible_paths = [
+                os.path.join(os.path.dirname(__file__), '../9_Kilovoltage x-ray beam dosimetry/monoBSFw.npz'),
+                os.path.join(os.path.dirname(__file__), '../../9_Kilovoltage x-ray beam dosimetry/monoBSFw.npz'),
+                '/Users/user/Desktop/SpekPy/9_Kilovoltage x-ray beam dosimetry/monoBSFw.npz'
+            ]
             
-            if not os.path.exists(bsf_data_path):
-                print(f"Warning: BSF data file not found at {bsf_data_path}")
+            bsf_data_path = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    bsf_data_path = path
+                    break
+            
+            print(f"Looking for BSF data at: {bsf_data_path}")
+            if bsf_data_path is None:
+                print(f"Warning: BSF data file not found in any of the searched locations")
                 return 1.0
             
             # Import monoenergy backscatter factor data
@@ -226,13 +243,12 @@ class ESAKCalculator:
                 muen_over_rho = np.ones_like(k)
             
             # Interpolate mono BSF values based on ssd, k, and field_size values
-            interpolation_points = []
-            for energy in k:
-                interpolation_points.append([ssd, energy, field_size])
-            
+            # Use the same format as the official SpekPy example
+            interpolation_points = np.column_stack([np.full_like(k, ssd), k, np.full_like(k, field_size)])
             bsf_mono = bsf_interpolator(interpolation_points)
             
-            # Calculate spectrum-weighted backscatter factor
+            # Calculate spectrum-weighted backscatter factor using numpy.sum
+            # This follows the exact method from the SpekPy BSFw.py example
             numerator = np.sum(k * phi_k * muen_over_rho * bsf_mono)
             denominator = np.sum(k * phi_k * muen_over_rho)
             
@@ -244,10 +260,15 @@ class ESAKCalculator:
             # Store BSF in results
             self.results['bsf'] = bsf_spectrum
             
+            print(f"BSF calculation successful: field_size={field_size} cm, ssd={ssd} cm, bsf={bsf_spectrum:.3f}")
+            print(f"BSF calculation details: numerator={numerator:.3e}, denominator={denominator:.3e}")
+            
             return bsf_spectrum
             
         except Exception as e:
             print(f"Error calculating BSF: {e}")
+            import traceback
+            traceback.print_exc()
             return 1.0
     
     def calculate_beam_quality_parameters(self) -> Dict:
@@ -361,7 +382,11 @@ class ESAKCalculator:
         # Add BSF results - either calculated or default 1.0
         if 'field_size_cm' in self.parameters:
             all_results['esak_with_bsf_mgy'] = esak_with_bsf
-            all_results['calculation_notes']['bsf_note'] = 'BSF correction applied for field size'
+            # BSF value should be stored in self.results during calculate_bsf()
+            bsf_value = self.results.get('bsf', 1.0)
+            all_results['bsf'] = bsf_value
+            all_results['calculation_notes']['bsf_note'] = f'BSF correction applied for field size: {bsf_value:.3f}'
+            print(f"BSF applied: {bsf_value:.3f}, ESAK: {esak:.3f} → {esak_with_bsf:.3f} mGy")
         else:
             # Set BSF to 1.0 when not calculated
             all_results['bsf'] = 1.0

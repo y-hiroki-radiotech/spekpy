@@ -85,10 +85,74 @@ clinical_xray_app/
 
 ### BSF（後方散乱係数）の計算方法
 
-1. **データソース**: SpekPy付属のモノエネルギーBSFデータ（`monoBSFw.npz`）
-2. **3D補間**: SSD、エネルギー、照射野径による補間
-3. **スペクトラル重み付け**: 質量エネルギー吸収係数で重み付けした平均
-4. **BSF式**: `BSF = Σ(E×Φ(E)×μen(E)×BSF(E)) / Σ(E×Φ(E)×μen(E))`
+BSF（Backscatter Factor）は、ファントムからの後方散乱線による線量増加を考慮するための係数です。
+
+#### 1. **データソース**
+- **ファイル**: `9_Kilovoltage x-ray beam dosimetry/monoBSFw.npz`
+- **内容**: モノエネルギーX線に対する水ファントムのBSFデータ
+- **パラメータ**: SSD（40-300cm）、エネルギー（10-150keV）、照射野径（1-30cm）
+
+#### 2. **3次元補間処理**
+```python
+# 3D補間関数の設定
+from scipy.interpolate import RegularGridInterpolator
+points = (SSD_data, Energy_data, Diameter_data)
+bsf_interpolator = RegularGridInterpolator(points, BSF_data, 
+                                          bounds_error=False, fill_value=1.0)
+
+# 各エネルギーに対してBSF値を補間
+for energy in spectrum_energies:
+    bsf_mono = bsf_interpolator([ssd, energy, field_diameter])
+```
+
+#### 3. **スペクトラル重み付け平均**
+```python
+# 質量エネルギー吸収係数による重み付け
+BSF = Σ(E × Φ(E) × μen(E) × BSF(E)) / Σ(E × Φ(E) × μen(E))
+```
+
+**変数説明**:
+- `E`: エネルギー（keV）
+- `Φ(E)`: フルエンススペクトラム（photons/cm²/keV）
+- `μen(E)`: 空気の質量エネルギー吸収係数（cm²/g）
+- `BSF(E)`: モノエネルギーBSF値
+
+#### 4. **実装の詳細**
+
+**必要なライブラリ**:
+```python
+import numpy as np
+from scipy.interpolate import RegularGridInterpolator
+import spekpy as sp
+```
+
+**計算フロー**:
+1. SpekPyでX線スペクトルを生成
+2. BSFデータファイル（`monoBSFw.npz`）を読み込み
+3. 3D補間関数を初期化
+4. 各エネルギーに対してBSF値を補間
+5. 質量エネルギー吸収係数で重み付け平均を計算
+6. 最終BSF値を返す
+
+#### 5. **典型的なBSF値**
+
+| 照射野径 | SSD | 80kVp | 100kVp | 120kVp |
+|---------|-----|-------|--------|--------|
+| 5cm     | 100cm | 1.15 | 1.20 | 1.25 |
+| 10cm    | 100cm | 1.25 | 1.30 | 1.35 |
+| 20cm    | 100cm | 1.35 | 1.40 | 1.45 |
+| 30cm    | 100cm | 1.40 | 1.45 | 1.50 |
+
+#### 6. **BSFの物理的意味**
+- **BSF = 1.0**: 後方散乱なし（狭い照射野、遠距離）
+- **BSF > 1.0**: 後方散乱による線量増加
+- **一般的な範囲**: 1.0 〜 1.5（臨床条件）
+
+#### 7. **注意事項**
+- 水ファントムでの計算（人体近似）
+- 一次線のみの計算（散乱線は別途考慮）
+- 平坦なファントム表面を仮定
+- 照射野形状は円形を仮定
 
 ### 支援される検査タイプ
 
@@ -100,9 +164,11 @@ clinical_xray_app/
 ## 📊 出力結果
 
 ### 線量評価項目
-- **ESAK**: mGy単位での入射表面線量
-- **空気カーマ/mAs**: 基準距離での線量率
+- **IAK**: mGy単位での照射空気カーマ（BSF補正前）
+- **ESAK**: mGy単位での入射表面線量（BSF補正後）
+- **BSF**: 後方散乱係数（1.0〜1.5）
 - **距離補正係数**: 逆二乗法則による補正値
+- **BSF補正率**: 後方散乱による線量増加率（%）
 
 ### ビーム品質パラメータ
 - **HVL1, HVL2**: Al、Cuでの半価層
@@ -132,12 +198,16 @@ clinical_xray_app/
     "protocol_name": "胸部正面立位"
   },
   "results": {
-    "esak_mgy": 2.456,
+    "esak_mgy": 1.587,
+    "bsf": 1.340,
+    "esak_with_bsf_mgy": 2.127,
     "hvl1_al_mm": 3.2,
     "parameters": {
       "kvp": 120,
       "mas": 10,
-      "ssd_cm": 100
+      "ssd_cm": 100,
+      "field_size_cm": 10.0,
+      "phantom_material": "water"
     }
   }
 }
@@ -169,9 +239,12 @@ python test_modules.py
 - **精度保証**: 計算結果は必ず他の方法で検証してください
 
 ### 制限事項
-- 散乱線は考慮されていません（一次線のみ）
-- 患者体厚による減弱は含まれていません
-- ビーム形状は均一と仮定されています
+- **散乱線**: 一次線のみ計算（散乱線は別途考慮）
+- **患者体厚**: 減弱は含まれていません
+- **ビーム形状**: 均一と仮定
+- **BSF計算**: 水ファントム、平坦表面、円形照射野を仮定
+- **照射野範囲**: 1-30cm径（SpekPyデータの制限）
+- **SSD範囲**: 40-300cm（SpekPyデータの制限）
 
 ## 📚 参考文献
 
