@@ -358,10 +358,14 @@ class ESAKCalculator:
             }
         }
         
-        # Add BSF results if field size was specified
+        # Add BSF results - either calculated or default 1.0
         if 'field_size_cm' in self.parameters:
             all_results['esak_with_bsf_mgy'] = esak_with_bsf
             all_results['calculation_notes']['bsf_note'] = 'BSF correction applied for field size'
+        else:
+            # Set BSF to 1.0 when not calculated
+            all_results['bsf'] = 1.0
+            all_results['calculation_notes']['bsf_note'] = 'BSF = 1.0 (no field size specified)'
         
         self.results = all_results
         return all_results

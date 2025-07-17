@@ -192,15 +192,6 @@ def main():
         # Calculation button
         st.markdown("---")
         calculate_button = st.button("🧮 Calculate ESAK", type="primary", use_container_width=True)
-        
-        # Quick presets
-        st.subheader("Quick Presets")
-        if st.button("Chest X-ray"):
-            set_preset_chest()
-        if st.button("Abdominal X-ray"):
-            set_preset_abdomen()
-        if st.button("Mammography"):
-            set_preset_mammography()
     
     # Main content area
     if calculate_button:
@@ -213,22 +204,6 @@ def main():
     
     # Footer with additional options
     display_footer()
-
-def set_preset_chest():
-    """Set parameters for chest X-ray examination."""
-    st.session_state.filters = [{'material': 'Al', 'thickness': 2.5}]
-    st.rerun()
-
-def set_preset_abdomen():
-    """Set parameters for abdominal X-ray examination."""
-    st.session_state.filters = [{'material': 'Al', 'thickness': 3.0}]
-    st.rerun()
-
-def set_preset_mammography():
-    """Set parameters for mammography examination."""
-    st.session_state.filters = [{'material': 'Be', 'thickness': 0.5}, 
-                                {'material': 'Al', 'thickness': 0.1}]
-    st.rerun()
 
 def perform_calculation(kvp, ma, time_s, anode_angle, target_material, ssd_cm,
                        device_name, protocol_name, enable_bsf, field_size_cm, phantom_material):
@@ -283,8 +258,14 @@ def perform_calculation(kvp, ma, time_s, anode_angle, target_material, ssd_cm,
                     'kvp': kvp,
                     'mas': ma * time_s,
                     'esak_mgy': results.get('esak_mgy', 0),
+                    'bsf': results.get('bsf', 1.0),
                     'hvl1_al_mm': results.get('hvl1_al_mm', 0)
                 }
+                
+                # Add BSF-corrected ESAK if available
+                if 'esak_with_bsf_mgy' in results:
+                    history_entry['esak_with_bsf_mgy'] = results.get('esak_with_bsf_mgy', 0)
+                    history_entry['field_size_cm'] = results.get('parameters', {}).get('field_size_cm', 0)
                 st.session_state.calculation_history.append(history_entry)
                 
                 st.success("✅ Calculation completed successfully!")
@@ -304,8 +285,6 @@ def display_results():
     st.markdown('<h2 class="section-header">📊 Calculation Results</h2>', 
                 unsafe_allow_html=True)
     
-    col1, col2, col3, col4 = st.columns(4)
-    
     def safe_format(value, precision=3, unit=""):
         """Safely format numeric values for display."""
         try:
@@ -315,36 +294,61 @@ def display_results():
         except:
             return "N/A"
     
-    with col1:
-        # BSFが有効な場合はIAKとして表示、無効な場合はESAKとして表示
-        if 'bsf' in results and 'field_size_cm' in results.get('parameters', {}):
+    # BSFが有効かどうかを判定
+    has_bsf = 'field_size_cm' in results.get('parameters', {})
+    bsf_value = results.get('bsf', 1.0)
+    
+    if has_bsf:
+        # BSF有効時: IAK, BSF, ESAK, HVL1の4列表示
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
             st.metric("IAK", 
                       safe_format(results.get('esak_mgy', 0), 3, "mGy"),
                       help="Incident Air Kerma (照射空気カーマ)")
-        else:
+        
+        with col2:
+            st.metric("BSF", 
+                      safe_format(bsf_value, 3),
+                      help="Backscatter Factor (後方散乱係数)")
+        
+        with col3:
+            st.metric("ESAK", 
+                      safe_format(results.get('esak_with_bsf_mgy', 0), 3, "mGy"),
+                      help="Entrance Surface Air Kerma (BSF補正後)")
+        
+        with col4:
+            st.metric("HVL1 (Al)", 
+                      safe_format(results.get('hvl1_al_mm', 0), 2, "mm"),
+                      help="First Half Value Layer in Aluminum")
+    else:
+        # BSF無効時: ESAK, BSF, HVL1, Mean Energyの4列表示
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
             st.metric("ESAK", 
                       safe_format(results.get('esak_mgy', 0), 3, "mGy"),
                       help="Entrance Surface Air Kerma")
+        
+        with col2:
+            st.metric("BSF", 
+                      safe_format(bsf_value, 3),
+                      help="Backscatter Factor (後方散乱係数)")
+        
+        with col3:
+            st.metric("HVL1 (Al)", 
+                      safe_format(results.get('hvl1_al_mm', 0), 2, "mm"),
+                      help="First Half Value Layer in Aluminum")
+        
+        with col4:
+            st.metric("Mean Energy", 
+                      safe_format(results.get('mean_energy_kev', 0), 1, "keV"),
+                      help="Mean energy of the X-ray spectrum")
     
-    with col2:
-        st.metric("HVL1 (Al)", 
-                  safe_format(results.get('hvl1_al_mm', 0), 2, "mm"),
-                  help="First Half Value Layer in Aluminum")
-    
-    with col3:
-        st.metric("Mean Energy", 
-                  safe_format(results.get('mean_energy_kev', 0), 1, "keV"),
-                  help="Mean energy of the X-ray spectrum")
-    
-    with col4:
-        st.metric("Air Kerma/mAs", 
-                  safe_format(results.get('kerma_per_mas_ugy', 0), 2, "µGy"),
-                  help="Air kerma per mAs at 100 cm")
-    
-    # Show BSF information if available
-    if 'bsf' in results and 'esak_with_bsf_mgy' in results:
-        st.markdown("### ⚡ 後方散乱係数（BSF）補正結果")
-        col1, col2, col3, col4 = st.columns(4)
+    # Show BSF detailed information if available
+    if has_bsf:
+        st.markdown("### 📊 詳細情報")
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             field_size = results.get('parameters', {}).get('field_size_cm', 'N/A')
@@ -353,26 +357,21 @@ def display_results():
                       help="Field diameter at SSD")
         
         with col2:
-            st.metric("BSF", 
-                      safe_format(results.get('bsf', 1.0), 3),
-                      help="水ファントムでの後方散乱係数")
+            st.metric("Mean Energy", 
+                      safe_format(results.get('mean_energy_kev', 0), 1, "keV"),
+                      help="Mean energy of the X-ray spectrum")
         
         with col3:
-            st.metric("ESAK", 
-                      safe_format(results.get('esak_with_bsf_mgy', 0), 3, "mGy"),
-                      help="BSF補正後のEntrance Surface Air Kerma")
-        
-        with col4:
             # Calculate the BSF correction percentage
             iak = results.get('esak_mgy', 0)
             esak_bsf = results.get('esak_with_bsf_mgy', 0)
             if iak > 0:
                 increase_percent = ((esak_bsf - iak) / iak) * 100
-                st.metric("補正率", 
+                st.metric("BSF補正率", 
                           f"+{increase_percent:.1f}%",
                           help="BSF補正による線量増加率")
             else:
-                st.metric("補正率", "N/A", help="BSF補正による線量増加率")
+                st.metric("BSF補正率", "N/A", help="BSF補正による線量増加率")
     
     # Detailed results
     tab1, tab2, tab3, tab4 = st.tabs(["📈 Spectrum Plot", "📋 Detailed Results", 

@@ -174,7 +174,9 @@ class DataExporter:
         
         # Results
         result_mappings = [
-            ('esak_mgy', 'ESAK', 'mGy'),
+            ('esak_mgy', 'ESAK (or IAK)', 'mGy'),
+            ('bsf', 'BSF', ''),
+            ('esak_with_bsf_mgy', 'ESAK (BSF corrected)', 'mGy'),
             ('kerma_per_mas_ugy', 'Air Kerma per mAs', 'µGy/mAs'),
             ('hvl1_al_mm', 'HVL1 (Al)', 'mm'),
             ('hvl2_al_mm', 'HVL2 (Al)', 'mm'),
@@ -477,13 +479,32 @@ def create_report_template(results: Dict,
             report_lines.append("None specified")
     
     # Results
+    has_bsf = 'field_size_cm' in results.get('parameters', {})
+    
+    if has_bsf:
+        report_lines.extend([
+            "",
+            "DOSIMETRIC RESULTS:",
+            "-" * 19,
+            f"IAK:              {results.get('esak_mgy', 'N/A'):.3f} mGy",
+            f"BSF:              {results.get('bsf', 'N/A'):.3f}",
+            f"ESAK (BSF corr.): {results.get('esak_with_bsf_mgy', 'N/A'):.3f} mGy",
+            f"Air Kerma/mAs:    {results.get('kerma_per_mas_ugy', 'N/A'):.2f} µGy/mAs",
+            f"Field Size:       {results.get('parameters', {}).get('field_size_cm', 'N/A')} cm",
+            "",
+        ])
+    else:
+        report_lines.extend([
+            "",
+            "DOSIMETRIC RESULTS:",
+            "-" * 19,
+            f"ESAK:             {results.get('esak_mgy', 'N/A'):.3f} mGy",
+            f"BSF:              {results.get('bsf', 1.0):.3f}",
+            f"Air Kerma/mAs:    {results.get('kerma_per_mas_ugy', 'N/A'):.2f} µGy/mAs",
+            "",
+        ])
+    
     report_lines.extend([
-        "",
-        "DOSIMETRIC RESULTS:",
-        "-" * 19,
-        f"ESAK:             {results.get('esak_mgy', 'N/A'):.3f} mGy",
-        f"Air Kerma/mAs:    {results.get('kerma_per_mas_ugy', 'N/A'):.2f} µGy/mAs",
-        "",
         "BEAM QUALITY PARAMETERS:",
         "-" * 25,
         f"HVL1 (Al):        {results.get('hvl1_al_mm', 'N/A'):.2f} mm",
