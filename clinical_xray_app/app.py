@@ -91,8 +91,12 @@ def main():
                 unsafe_allow_html=True)
 
     st.markdown("""
-    This application calculates **ESAK (Entrance Surface Air Kerma)** and other dosimetric
-    parameters for clinical X-ray examinations using the SpekPy spectral modeling toolkit.
+    This application calculates **IAK (Incident Air Kerma)** and **ESAK (Entrance Surface Air Kerma)** 
+    and other dosimetric parameters for clinical X-ray examinations using the SpekPy spectral modeling toolkit.
+    
+    - **IAK**: Air kerma without phantom (primary beam only)
+    - **ESAK**: Air kerma including backscatter from phantom (IAK × BSF)
+    - **BSF**: Backscatter Factor accounts for radiation scattered back from the patient/phantom
     """)
 
     # Sidebar for parameters
@@ -354,28 +358,23 @@ def display_results():
                       safe_format(results.get('hvl1_al_mm', 0), 2, "mm"),
                       help="First Half Value Layer in Aluminum")
     else:
-        # BSF無効時: ESAK, BSF, HVL1, Mean Energyの4列表示
-        col1, col2, col3, col4 = st.columns(4)
+        # BSF無効時: IAK, HVL1, Effective Energyの3列表示（BSFは非表示）
+        col1, col2, col3 = st.columns(3)
 
         with col1:
-            st.metric("ESAK",
+            st.metric("IAK",
                       safe_format(results.get('esak_mgy', 0), 3, "mGy"),
-                      help="Entrance Surface Air Kerma")
+                      help="Incident Air Kerma (照射空気カーマ)")
 
         with col2:
-            st.metric("BSF",
-                      safe_format(bsf_value, 3),
-                      help="Backscatter Factor (後方散乱係数)")
-
-        with col3:
             st.metric("HVL1 (Al)",
                       safe_format(results.get('hvl1_al_mm', 0), 2, "mm"),
                       help="First Half Value Layer in Aluminum")
 
-        with col4:
-            st.metric("Mean Energy",
-                      safe_format(results.get('mean_energy_kev', 0), 1, "keV"),
-                      help="Mean energy of the X-ray spectrum")
+        with col3:
+            st.metric("Effective Energy",
+                      safe_format(results.get('effective_energy_kev', 0), 1, "keV"),
+                      help="Effective energy of the X-ray spectrum")
 
     # Show BSF detailed information if available
     if has_bsf:
@@ -541,7 +540,7 @@ def display_detailed_results():
         ]
     else:
         result_data = [
-            ["ESAK", format_numeric(results.get('esak_mgy'), 3, "mGy")],
+            ["IAK (照射空気カーマ)", format_numeric(results.get('esak_mgy'), 3, "mGy")],
             ["Air Kerma per mAs", format_numeric(results.get('kerma_per_mas_ugy'), 2, "µGy/mAs")],
             ["Distance Correction Factor", format_numeric(results.get('distance_correction'), 3)],
         ]
@@ -681,12 +680,13 @@ def display_footer():
         st.markdown("""
         ### Clinical X-ray Dosimetry Calculator
 
-        This application calculates **ESAK (Entrance Surface Air Kerma)** and other dosimetric
-        parameters for clinical X-ray examinations using the SpekPy spectral modeling toolkit.
+        This application calculates **IAK (Incident Air Kerma)** and **ESAK (Entrance Surface Air Kerma)** 
+        and other dosimetric parameters for clinical X-ray examinations using the SpekPy spectral modeling toolkit.
 
         **Key Features:**
         - Accurate X-ray spectrum modeling
-        - ESAK calculation with distance correction
+        - IAK and ESAK calculation with distance correction
+        - Backscatter Factor (BSF) calculation for phantom correction
         - Half Value Layer (HVL) analysis
         - Beam quality parameter assessment
         - Data export in multiple formats

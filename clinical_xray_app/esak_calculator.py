@@ -358,7 +358,7 @@ class ESAKCalculator:
         Returns:
             Dictionary containing all calculated results
         """
-        # Calculate ESAK
+        # Calculate ESAK (this also calculates kerma_per_mas and distance_correction)
         esak = self.calculate_esak()
         
         # Calculate BSF and ESAK with BSF if field size is specified
@@ -367,10 +367,13 @@ class ESAKCalculator:
         # Calculate beam quality parameters
         beam_quality = self.calculate_beam_quality_parameters()
         
-        # Combine all results
+        # Combine all results, ensuring that kerma_per_mas and distance_correction are included
         all_results = {
             'parameters': self.parameters.copy(),
             'esak_mgy': esak,
+            # Include values calculated during ESAK calculation
+            'kerma_per_mas_ugy': self.results.get('kerma_per_mas_ugy', 0.0),
+            'distance_correction': self.results.get('distance_correction', 1.0),
             **beam_quality,
             'calculation_notes': {
                 'reference_distance_cm': 100.0,

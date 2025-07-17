@@ -109,6 +109,7 @@ dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "scipy" },
     { name = "spekpy" },
     { name = "streamlit" },
 ]
@@ -118,6 +119,7 @@ requires-dist = [
     { name = "matplotlib", specifier = ">=3.10.3" },
     { name = "numpy", specifier = ">=2.3.1" },
     { name = "pandas", specifier = ">=2.3.1" },
+    { name = "scipy", specifier = ">=1.16.0" },
     { name = "spekpy", specifier = ">=2.0.13" },
     { name = "streamlit", specifier = ">=1.47.0" },
 ]
