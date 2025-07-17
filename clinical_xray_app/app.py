@@ -118,10 +118,33 @@ def main():
         mas = ma * time_s
         st.info(f"**mAs**: {mas:.2f}")
         
-        # Distance settings
-        st.subheader("Geometry")
+        # Distance and field settings
+        st.subheader("📐 Geometry")
         ssd_cm = st.number_input("Source-to-Skin Distance (cm)", 
                                  min_value=50, max_value=300, value=100, step=1)
+        
+        # Field size settings
+        enable_bsf = st.checkbox("⚡ Include Backscatter Factor (BSF)", 
+                                value=False,
+                                help="Enable field size correction for backscatter from phantom")
+        
+        field_size_cm = 10.0  # Default value
+        phantom_material = 'water'  # Default value
+        
+        if enable_bsf:
+            col1, col2 = st.columns(2)
+            with col1:
+                field_size_cm = st.number_input("Field Size (cm)", 
+                                               min_value=1.0, max_value=35.0, 
+                                               value=10.0, step=0.5,
+                                               help="Field diameter at SSD")
+            with col2:
+                phantom_material = st.selectbox("Phantom Material",
+                                              options=['water'],
+                                              index=0,
+                                              help="Material for BSF calculation")
+            
+            st.info(f"🔍 BSF will be calculated for {field_size_cm} cm field at {ssd_cm} cm SSD")
         
         # Target material
         target_material = st.selectbox("Target Material", 
@@ -182,7 +205,7 @@ def main():
     # Main content area
     if calculate_button:
         perform_calculation(kvp, ma, time_s, anode_angle, target_material, ssd_cm,
-                          device_name, protocol_name)
+                          device_name, protocol_name, enable_bsf, field_size_cm, phantom_material)
     
     # Display results if available
     if st.session_state.results is not None:
@@ -208,7 +231,7 @@ def set_preset_mammography():
     st.rerun()
 
 def perform_calculation(kvp, ma, time_s, anode_angle, target_material, ssd_cm,
-                       device_name, protocol_name):
+                       device_name, protocol_name, enable_bsf, field_size_cm, phantom_material):
     """Perform the ESAK calculation."""
     
     with st.spinner("Calculating X-ray spectrum and dosimetric parameters..."):
@@ -231,6 +254,13 @@ def perform_calculation(kvp, ma, time_s, anode_angle, target_material, ssd_cm,
                         filter_config['material'], 
                         filter_config['thickness']
                     )
+            
+            # Set field parameters if BSF is enabled
+            if enable_bsf:
+                calculator.set_field_parameters(
+                    field_size_cm=field_size_cm,
+                    phantom_material=phantom_material
+                )
             
             # Calculate all metrics
             results = calculator.calculate_all_metrics()
@@ -304,6 +334,27 @@ def display_results():
         st.metric("Air Kerma/mAs", 
                   safe_format(results.get('kerma_per_mas_ugy', 0), 2, "µGy"),
                   help="Air kerma per mAs at 100 cm")
+    
+    # Show BSF information if available
+    if 'bsf' in results and 'esak_with_bsf_mgy' in results:
+        st.markdown("### ⚡ Backscatter Factor (BSF) Results")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("BSF", 
+                      safe_format(results.get('bsf', 1.0), 3),
+                      help="Backscatter Factor for water phantom")
+        
+        with col2:
+            st.metric("ESAK with BSF", 
+                      safe_format(results.get('esak_with_bsf_mgy', 0), 3, "mGy"),
+                      help="ESAK including backscatter correction")
+        
+        with col3:
+            field_size = results.get('parameters', {}).get('field_size_cm', 'N/A')
+            st.metric("Field Size", 
+                      f"{field_size} cm" if field_size != 'N/A' else "N/A",
+                      help="Field diameter at SSD")
     
     # Detailed results
     tab1, tab2, tab3, tab4 = st.tabs(["📈 Spectrum Plot", "📋 Detailed Results", 
@@ -411,6 +462,11 @@ def display_detailed_results():
             param_data.append([f"Filter {i+1}", 
                               f"{filter_config['material']} {filter_config['thickness_mm']} mm"])
     
+    # Add field size information if available
+    if 'field_size_cm' in params:
+        param_data.append(["Field Size", f"{params['field_size_cm']} cm"])
+        param_data.append(["Phantom Material", params.get('phantom_material', 'N/A')])
+    
     param_df = pd.DataFrame(param_data, columns=["Parameter", "Value"])
     st.table(param_df)
     
@@ -428,6 +484,13 @@ def display_detailed_results():
         ["Air Kerma per mAs", format_numeric(results.get('kerma_per_mas_ugy'), 2, "µGy/mAs")],
         ["Distance Correction Factor", format_numeric(results.get('distance_correction'), 3)],
     ]
+    
+    # Add BSF results if available
+    if 'bsf' in results:
+        result_data.extend([
+            ["Backscatter Factor (BSF)", format_numeric(results.get('bsf'), 3)],
+            ["ESAK with BSF", format_numeric(results.get('esak_with_bsf_mgy'), 3, "mGy")]
+        ])
     
     st.subheader("Beam Quality Parameters")
     

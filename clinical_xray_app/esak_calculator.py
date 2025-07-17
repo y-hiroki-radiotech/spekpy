@@ -11,9 +11,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '../spekpy_release'))
 
 try:
     import spekpy as sp
+    from scipy.interpolate import RegularGridInterpolator
 except ImportError:
-    print("Warning: SpekPy not installed. Please install using 'uv add spekpy'")
+    print("Warning: SpekPy or SciPy not installed. Please install using 'uv add spekpy scipy'")
     sp = None
+    RegularGridInterpolator = None
 
 import numpy as np
 from typing import Dict, Tuple, List, Optional
@@ -79,6 +81,20 @@ class ESAKCalculator:
         self.parameters['filters'].append({
             'material': material,
             'thickness_mm': thickness_mm
+        })
+    
+    def set_field_parameters(self, field_size_cm: float = 10.0, 
+                           phantom_material: str = 'water') -> None:
+        """
+        Set field size and phantom parameters for BSF calculation.
+        
+        Args:
+            field_size_cm: Field size (diameter) in cm at SSD (default: 10.0)
+            phantom_material: Phantom material for BSF calculation (default: 'water')
+        """
+        self.parameters.update({
+            'field_size_cm': field_size_cm,
+            'phantom_material': phantom_material
         })
         
     def generate_spectrum(self) -> bool:
@@ -155,6 +171,85 @@ class ESAKCalculator:
             print(f"Error calculating ESAK: {e}")
             return 0.0
     
+    def calculate_bsf(self) -> float:
+        """
+        Calculate Backscatter Factor (BSF) for water phantom.
+        
+        Returns:
+            BSF value (typically 1.0-1.5)
+        """
+        if sp is None or RegularGridInterpolator is None:
+            print("Warning: SpekPy or SciPy not available for BSF calculation")
+            return 1.0  # Default to no backscatter correction
+        
+        if self.spectrum is None:
+            if not self.generate_spectrum():
+                return 1.0
+        
+        try:
+            # Get field parameters
+            field_size = self.parameters.get('field_size_cm', 10.0)
+            ssd = self.parameters.get('ssd_cm', 100.0)
+            
+            # Load BSF data from SpekPy tutorial directory
+            bsf_data_path = os.path.join(
+                os.path.dirname(__file__), 
+                '../9_Kilovoltage x-ray beam dosimetry/monoBSFw.npz'
+            )
+            
+            if not os.path.exists(bsf_data_path):
+                print(f"Warning: BSF data file not found at {bsf_data_path}")
+                return 1.0
+            
+            # Import monoenergy backscatter factor data
+            data = np.load(bsf_data_path)
+            SSD_data = data['SSD']
+            K_data = data['k']
+            D_data = data['D']
+            Bw_data = data['Bw']
+            
+            # Define an interpolation function for the backscatter factor
+            points = (SSD_data, K_data, D_data)
+            bsf_interpolator = RegularGridInterpolator(
+                points, Bw_data, bounds_error=False, fill_value=1.0
+            )
+            
+            # Get spectrum data
+            k, phi_k = self.spectrum.get_spectrum()
+            
+            # Get mass energy absorption coefficient at energies k
+            try:
+                muen_data = sp.Spek().muen_air_data
+                muen_over_rho = muen_data.get_muen_over_rho_air(k)
+            except:
+                # Fallback if mass energy absorption data not available
+                muen_over_rho = np.ones_like(k)
+            
+            # Interpolate mono BSF values based on ssd, k, and field_size values
+            interpolation_points = []
+            for energy in k:
+                interpolation_points.append([ssd, energy, field_size])
+            
+            bsf_mono = bsf_interpolator(interpolation_points)
+            
+            # Calculate spectrum-weighted backscatter factor
+            numerator = np.sum(k * phi_k * muen_over_rho * bsf_mono)
+            denominator = np.sum(k * phi_k * muen_over_rho)
+            
+            if denominator > 0:
+                bsf_spectrum = numerator / denominator
+            else:
+                bsf_spectrum = 1.0
+            
+            # Store BSF in results
+            self.results['bsf'] = bsf_spectrum
+            
+            return bsf_spectrum
+            
+        except Exception as e:
+            print(f"Error calculating BSF: {e}")
+            return 1.0
+    
     def calculate_beam_quality_parameters(self) -> Dict:
         """
         Calculate beam quality parameters including HVL, mean energy, etc.
@@ -213,6 +308,28 @@ class ESAKCalculator:
             print(f"Error getting spectrum data: {e}")
             return np.array([]), np.array([])
     
+    def calculate_esak_with_bsf(self) -> float:
+        """
+        Calculate ESAK with Backscatter Factor (BSF) correction.
+        
+        Returns:
+            ESAK in mGy including BSF correction
+        """
+        # Calculate basic ESAK
+        esak_basic = self.calculate_esak()
+        
+        # Calculate BSF if field size is specified
+        if 'field_size_cm' in self.parameters:
+            bsf = self.calculate_bsf()
+            esak_with_bsf = esak_basic * bsf
+            
+            # Store the corrected ESAK
+            self.results['esak_with_bsf_mgy'] = esak_with_bsf
+            
+            return esak_with_bsf
+        else:
+            return esak_basic
+    
     def calculate_all_metrics(self) -> Dict:
         """
         Calculate all dosimetric and beam quality metrics.
@@ -222,6 +339,9 @@ class ESAKCalculator:
         """
         # Calculate ESAK
         esak = self.calculate_esak()
+        
+        # Calculate BSF and ESAK with BSF if field size is specified
+        esak_with_bsf = self.calculate_esak_with_bsf()
         
         # Calculate beam quality parameters
         beam_quality = self.calculate_beam_quality_parameters()
@@ -237,6 +357,11 @@ class ESAKCalculator:
                 'esak_definition': 'Entrance Surface Air Kerma corrected for actual SSD'
             }
         }
+        
+        # Add BSF results if field size was specified
+        if 'field_size_cm' in self.parameters:
+            all_results['esak_with_bsf_mgy'] = esak_with_bsf
+            all_results['calculation_notes']['bsf_note'] = 'BSF correction applied for field size'
         
         self.results = all_results
         return all_results
