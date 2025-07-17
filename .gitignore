@@ -48,3 +48,28 @@ Thumbs.db
 *.mov
 *.wmv
 
+# SpekPy project: Only include clinical_xray_app folder
+# Ignore all other directories except clinical_xray_app
+1_Introduction/
+2_Basics of x-ray tubes/
+3_X-ray production/
+4_Basic dosimetry and beam-quality characterization/
+5_A review of analytical model of the x-ray spectrum/
+6_An analytical model in detail/
+7_Overview on Monte Carlo modelling/
+8_Predicting and matching half-value layers/
+9_Kilovoltage x-ray beam dosimetry/
+10_Optimizing the tube potential/
+spekpy_release/
+paper_and_book/
+
+# Ignore specific files
+spekpy_wiki.pdf
+cover_caxtus.jpg
+license.txt
+
+# Keep only clinical_xray_app directory and core project files
+!clinical_xray_app/
+!CLAUDE.md
+!README.md
+
