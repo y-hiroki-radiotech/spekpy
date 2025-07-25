@@ -211,6 +211,9 @@ def main():
                                               help="Material for BSF calculation")
 
             st.info(f"🔍 BSF will be calculated for {field_size_cm} cm field at {ssd_cm} cm SSD")
+            
+            # Show BSF data range information
+            st.caption("📊 BSF Data Range: SSD 10-100 cm, Field 1-30 cm (values outside range will be clamped)")
 
         # Target material
         target_material = st.selectbox("Target Material",
@@ -459,6 +462,23 @@ def display_results():
                           help="BSF補正による線量増加率")
             else:
                 st.metric("BSF補正率", "N/A", help="BSF補正による線量増加率")
+
+        # Show BSF calculation warnings if values were clamped
+        bsf_info = results.get('bsf_calculation_info', {})
+        if bsf_info:
+            warnings = []
+            if bsf_info.get('ssd_clamped', False):
+                orig_ssd = bsf_info.get('original_ssd_cm', 'N/A')
+                used_ssd = bsf_info.get('used_ssd_cm', 'N/A')
+                warnings.append(f"SSD {orig_ssd} cm → {used_ssd} cm (データ範囲: 10-100 cm)")
+            
+            if bsf_info.get('field_clamped', False):
+                orig_field = bsf_info.get('original_field_size_cm', 'N/A')
+                used_field = bsf_info.get('used_field_size_cm', 'N/A')
+                warnings.append(f"照射野 {orig_field} cm → {used_field} cm (データ範囲: 1-30 cm)")
+            
+            if warnings:
+                st.warning("⚠️ BSF計算で値がクランプされました:\n" + "\n".join([f"• {w}" for w in warnings]))
 
     # Detailed results
     tab1, tab2, tab3, tab4 = st.tabs(["📈 Spectrum Plot", "📋 Detailed Results",

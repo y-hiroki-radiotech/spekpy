@@ -125,9 +125,25 @@ BSF（Backscatter Factor）は、ファントムからの後方散乱線によ�
 #### 1. **データソース**
 - **ファイル**: `9_Kilovoltage x-ray beam dosimetry/monoBSFw.npz`
 - **内容**: モノエネルギーX線に対する水ファントムのBSFデータ
-- **パラメータ**: SSD（40-300cm）、エネルギー（10-150keV）、照射野径（1-30cm）
+- **データ範囲**: SSD（10-100cm）、エネルギー（4-304keV）、照射野径（1-30cm）
+- **範囲外処理**: 範囲外の値は最も近い境界値にクランプして計算
 
-#### 2. **3次元補間処理**
+#### 2. **範囲外値の処理とクランピング**
+```python
+# データ範囲の確認とクランピング
+ssd_min, ssd_max = np.min(SSD_data), np.max(SSD_data)      # 10-100 cm
+field_min, field_max = np.min(D_data), np.max(D_data)      # 1-30 cm
+
+# 範囲外の値を境界値にクランプ
+ssd_clamped = np.clip(ssd, ssd_min, ssd_max)
+field_size_clamped = np.clip(field_size, field_min, field_max)
+
+# 警告メッセージの表示
+if original_ssd != ssd_clamped:
+    print(f"Warning: SSD {original_ssd} cm is outside range. Using {ssd_clamped} cm.")
+```
+
+#### 3. **3次元補間処理**
 ```python
 # 3D補間関数の設定
 from scipy.interpolate import RegularGridInterpolator
@@ -135,12 +151,12 @@ points = (SSD_data, Energy_data, Diameter_data)
 bsf_interpolator = RegularGridInterpolator(points, BSF_data, 
                                           bounds_error=False, fill_value=1.0)
 
-# 各エネルギーに対してBSF値を補間
+# 各エネルギーに対してBSF値を補間（クランプされた値を使用）
 for energy in spectrum_energies:
-    bsf_mono = bsf_interpolator([ssd, energy, field_diameter])
+    bsf_mono = bsf_interpolator([ssd_clamped, energy, field_size_clamped])
 ```
 
-#### 3. **スペクトラル重み付け平均**
+#### 4. **スペクトラル重み付け平均**
 ```python
 # 質量エネルギー吸収係数による重み付け
 BSF = Σ(E × Φ(E) × μen(E) × BSF(E)) / Σ(E × Φ(E) × μen(E))
@@ -152,7 +168,7 @@ BSF = Σ(E × Φ(E) × μen(E) × BSF(E)) / Σ(E × Φ(E) × μen(E))
 - `μen(E)`: 空気の質量エネルギー吸収係数（cm²/g）
 - `BSF(E)`: モノエネルギーBSF値
 
-#### 4. **実装の詳細**
+#### 5. **実装の詳細**
 
 **必要なライブラリ**:
 ```python
@@ -161,15 +177,32 @@ from scipy.interpolate import RegularGridInterpolator
 import spekpy as sp
 ```
 
-**計算フロー**:
+**改良された計算フロー**:
 1. SpekPyでX線スペクトルを生成
 2. BSFデータファイル（`monoBSFw.npz`）を読み込み
-3. 3D補間関数を初期化
-4. 各エネルギーに対してBSF値を補間
-5. 質量エネルギー吸収係数で重み付け平均を計算
-6. 最終BSF値を返す
+3. **範囲チェック**: SSDと照射野サイズがデータ範囲内かを確認
+4. **値のクランピング**: 範囲外の場合は境界値にクランプ
+5. **警告表示**: クランプが発生した場合はユーザーに通知
+6. 3D補間関数を初期化
+7. 各エネルギーに対してBSF値を補間（クランプされた値を使用）
+8. 質量エネルギー吸収係数で重み付け平均を計算
+9. 最終BSF値と計算情報を返す
 
-#### 5. **典型的なBSF値**
+#### 6. **SSD範囲外での動作例**
+
+```
+例1: SSD=120cm（範囲外）の場合
+入力: SSD=120cm, 照射野=10cm
+処理: SSD=100cmにクランプ（最大値）
+結果: BSF=1.340（100cm相当）+ 警告メッセージ
+
+例2: SSD=180cm（大幅範囲外）の場合  
+入力: SSD=180cm, 照射野=15cm
+処理: SSD=100cmにクランプ（最大値）
+結果: BSF=1.398（100cm相当）+ 警告メッセージ
+```
+
+#### 7. **典型的なBSF値**
 
 | 照射野径 | SSD | 80kVp | 100kVp | 120kVp |
 |---------|-----|-------|--------|--------|
@@ -178,16 +211,26 @@ import spekpy as sp
 | 20cm    | 100cm | 1.35 | 1.40 | 1.45 |
 | 30cm    | 100cm | 1.40 | 1.45 | 1.50 |
 
-#### 6. **BSFの物理的意味**
+#### 8. **BSFの物理的意味**
 - **BSF = 1.0**: 後方散乱なし（狭い照射野、遠距離）
 - **BSF > 1.0**: 後方散乱による線量増加
 - **一般的な範囲**: 1.0 〜 1.5（臨床条件）
 
-#### 7. **注意事項**
-- 水ファントムでの計算（人体近似）
-- 一次線のみの計算（散乱線は別途考慮）
-- 平坦なファントム表面を仮定
-- 照射野形状は円形を仮定
+#### 9. **注意事項とデータ制限**
+- **水ファントム**: 人体組織の近似として使用
+- **一次線のみ**: 散乱線は別途考慮が必要
+- **平坦表面**: ファントム表面の形状を平坦と仮定
+- **円形照射野**: 照射野形状は円形を仮定
+- **データ範囲制限**: 
+  - SSD: 10-100cm（範囲外は境界値にクランプ）
+  - 照射野径: 1-30cm（範囲外は境界値にクランプ）
+  - エネルギー: 4-304keV（SpekPyスペクトラムに依存）
+
+#### 10. **改善点（v2024更新）**
+- ✅ **SSD範囲外対応**: 100cm超のSSDでもBSF計算が可能
+- ✅ **透明性向上**: クランプ処理時の警告メッセージ表示
+- ✅ **計算情報保存**: 使用された実際の値と元の値を記録
+- ✅ **UI改善**: データ範囲情報の事前表示
 
 ## 🏥 装置設定管理
 
@@ -298,6 +341,12 @@ python tests/test_device_config.py
 # アプリケーション統合テスト
 python tests/test_app_integration.py
 
+# BSF SSD問題の検証テスト
+python tests/test_bsf_ssd.py
+
+# BSF最終検証テスト
+python tests/test_bsf_ssd_final.py
+
 # 完全なテスト（全依存関係が必要）
 python tests/test_modules.py
 ```
@@ -320,8 +369,10 @@ python tests/test_modules.py
 - **患者体厚**: 減弱は含まれていません
 - **ビーム形状**: 均一と仮定
 - **BSF計算**: 水ファントム、平坦表面、円形照射野を仮定
-- **照射野範囲**: 1-30cm径（SpekPyデータの制限）
-- **SSD範囲**: 40-300cm（SpekPyデータの制限）
+- **BSFデータ範囲**: 
+  - 照射野径: 1-30cm（範囲外は境界値にクランプ）
+  - SSD: 10-100cm（範囲外は境界値にクランプ、警告表示）
+- **SSD制限の緩和**: v2024更新でSSD範囲外でも計算可能（クランプ処理）
 
 ## 📚 参考文献
 
@@ -351,7 +402,12 @@ python tests/test_modules.py
    - 装置選択を「その他（カスタム入力）」以外に変更
    - ページをリフレッシュして再選択
    
-4. **メモリ不足エラー**
+4. **BSF計算でSSD範囲外の警告が出る**
+   - SSD 100cm超の場合: 正常動作（100cmでクランプして計算）
+   - 警告メッセージは情報提供のため（エラーではない）
+   - より正確な計算には100cm以下のSSDを推奨
+
+5. **メモリ不足エラー**
    - スペクトルの分解能を下げる
    - フィルタの枚数を減らす
 

@@ -225,6 +225,29 @@ class ESAKCalculator:
             D_data = data['D']
             Bw_data = data['Bw']
             
+            # Check SSD range and clamp to available data range
+            ssd_min, ssd_max = np.min(SSD_data), np.max(SSD_data)
+            field_min, field_max = np.min(D_data), np.max(D_data)
+            
+            # Clamp SSD to available range
+            original_ssd = ssd
+            ssd_clamped = np.clip(ssd, ssd_min, ssd_max)
+            
+            # Clamp field size to available range
+            original_field_size = field_size
+            field_size_clamped = np.clip(field_size, field_min, field_max)
+            
+            # Warning messages for out-of-range values
+            if original_ssd != ssd_clamped:
+                print(f"Warning: SSD {original_ssd} cm is outside BSF data range ({ssd_min}-{ssd_max} cm). Using {ssd_clamped} cm.")
+            
+            if original_field_size != field_size_clamped:
+                print(f"Warning: Field size {original_field_size} cm is outside BSF data range ({field_min}-{field_max} cm). Using {field_size_clamped} cm.")
+            
+            # Use clamped values for BSF calculation
+            ssd = ssd_clamped
+            field_size = field_size_clamped
+            
             # Define an interpolation function for the backscatter factor
             points = (SSD_data, K_data, D_data)
             bsf_interpolator = RegularGridInterpolator(
@@ -257,11 +280,25 @@ class ESAKCalculator:
             else:
                 bsf_spectrum = 1.0
             
-            # Store BSF in results
+            # Store BSF in results with additional metadata
             self.results['bsf'] = bsf_spectrum
+            self.results['bsf_calculation_info'] = {
+                'original_ssd_cm': original_ssd,
+                'used_ssd_cm': ssd,
+                'original_field_size_cm': original_field_size,
+                'used_field_size_cm': field_size,
+                'ssd_clamped': original_ssd != ssd,
+                'field_clamped': original_field_size != field_size,
+                'data_ssd_range': (ssd_min, ssd_max),
+                'data_field_range': (field_min, field_max)
+            }
             
             print(f"BSF calculation successful: field_size={field_size} cm, ssd={ssd} cm, bsf={bsf_spectrum:.3f}")
             print(f"BSF calculation details: numerator={numerator:.3e}, denominator={denominator:.3e}")
+            
+            # Show warning if values were clamped
+            if original_ssd != ssd or original_field_size != field_size:
+                print(f"Note: BSF calculated using clamped values due to data range limitations")
             
             return bsf_spectrum
             
@@ -388,6 +425,11 @@ class ESAKCalculator:
             # BSF value should be stored in self.results during calculate_bsf()
             bsf_value = self.results.get('bsf', 1.0)
             all_results['bsf'] = bsf_value
+            
+            # Include BSF calculation information if available
+            if 'bsf_calculation_info' in self.results:
+                all_results['bsf_calculation_info'] = self.results['bsf_calculation_info']
+            
             all_results['calculation_notes']['bsf_note'] = f'BSF correction applied for field size: {bsf_value:.3f}'
             print(f"BSF applied: {bsf_value:.3f}, ESAK: {esak:.3f} → {esak_with_bsf:.3f} mGy")
         else:
