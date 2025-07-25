@@ -58,7 +58,6 @@ Thumbs.db
 6_An analytical model in detail/
 7_Overview on Monte Carlo modelling/
 8_Predicting and matching half-value layers/
-# 9_Kilovoltage x-ray beam dosimetry/
 10_Optimizing the tube potential/
 spekpy_release/
 paper_and_book/
@@ -68,10 +67,11 @@ spekpy_wiki.pdf
 cover_caxtus.jpg
 license.txt
 .ipynb_checkpoints/
+CLAUDE.md
 
 # Keep only clinical_xray_app directory and core project files
 !clinical_xray_app/
-!CLAUDE.md
 !README.md
 !.gitignore
+!9_Kilovoltage x-ray beam dosimetry/
 

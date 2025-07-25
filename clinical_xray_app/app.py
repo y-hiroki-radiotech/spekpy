@@ -18,6 +18,7 @@ from pathlib import Path
 from esak_calculator import ESAKCalculator
 from visualization import XRayVisualizer
 from data_export import DataExporter, create_report_template
+from device_config import get_device_manager, get_device_config, is_predefined_device
 
 # Check Streamlit version for rerun compatibility
 def safe_rerun():
@@ -82,6 +83,10 @@ if 'results' not in st.session_state:
     st.session_state.results = None
 if 'calculation_history' not in st.session_state:
     st.session_state.calculation_history = []
+if 'selected_device' not in st.session_state:
+    st.session_state.selected_device = None
+if 'device_parameters_applied' not in st.session_state:
+    st.session_state.device_parameters_applied = False
 
 def main():
     """Main application function."""
@@ -107,13 +112,55 @@ def main():
         # Device and Protocol Information
         st.subheader("🏥 装置・プロトコール情報")
 
-        device_name = st.text_input("装置名",
-                                    placeholder="例: SIEMENS Ysio Max",
-                                    help="X線装置の製造会社・型番")
+        # Get device manager
+        device_manager = get_device_manager()
+        device_options = device_manager.get_device_options_for_dropdown()
+
+        # Device selection dropdown
+        selected_device_option = st.selectbox(
+            "装置選択",
+            options=device_options,
+            help="プルダウンから装置を選択するか、カスタム入力を選択してください"
+        )
+
+        # Handle device name input
+        if selected_device_option == "その他（カスタム入力）":
+            device_name = st.text_input(
+                "カスタム装置名",
+                placeholder="例: SIEMENS Ysio Max",
+                help="カスタム装置名を入力してください"
+            )
+        else:
+            device_name = selected_device_option
+            st.info(f"選択された装置: {device_name}")
 
         protocol_name = st.text_input("プロトコール名",
                                       placeholder="例: 胸部正面立位",
                                       help="検査プロトコールの名称")
+
+        # Check for device selection change and update parameters
+        device_config = None
+        if selected_device_option != "その他（カスタム入力）":
+            device_config = get_device_config(device_name)
+            
+            # Check if device selection has changed
+            if st.session_state.selected_device != device_name:
+                st.session_state.selected_device = device_name
+                st.session_state.device_parameters_applied = False
+                
+                # Update parameters when device changes
+                if device_config:
+                    # Initialize filters with device-specific configuration
+                    st.session_state.filters = [{
+                        'material': device_config.filter_material,
+                        'thickness': device_config.filter_thickness
+                    }]
+                    st.session_state.previous_filters = st.session_state.filters.copy()
+                    st.session_state.device_parameters_applied = True
+                    
+                    # Show success message
+                    st.success(f"✅ 装置パラメータを自動設定しました: {device_name}")
+                    st.info(f"🔧 アノード角度: {device_config.anode_angle}°, フィルタ: {device_config.filter_material} {device_config.filter_thickness}mm")
 
         # Clinical parameters
         st.subheader("📊 Clinical Settings")
@@ -128,8 +175,11 @@ def main():
         with col2:
             time_s = st.number_input("Exposure Time (s)",
                                      min_value=0.001, max_value=10.0, value=0.1, step=0.001, format="%.3f")
+            
+            # Set anode angle based on device configuration
+            default_anode_angle = device_config.anode_angle if device_config else 12.0
             anode_angle = st.number_input("Anode Angle (°)",
-                                          min_value=5.0, max_value=20.0, value=12.0, step=0.5)
+                                          min_value=5.0, max_value=20.0, value=default_anode_angle, step=0.5)
 
         mas = ma * time_s
         st.info(f"**mAs**: {mas:.2f}")
@@ -171,9 +221,15 @@ def main():
         # Filtration
         st.subheader("Filtration")
 
-        # Dynamic filter addition
+        # Dynamic filter addition - initialize with device-specific or default filter
         if 'filters' not in st.session_state:
-            st.session_state.filters = [{'material': 'Al', 'thickness': 2.5}]
+            if device_config:
+                st.session_state.filters = [{
+                    'material': device_config.filter_material, 
+                    'thickness': device_config.filter_thickness
+                }]
+            else:
+                st.session_state.filters = [{'material': 'Al', 'thickness': 2.5}]
 
         # Store previous filter state to detect changes
         if 'previous_filters' not in st.session_state:

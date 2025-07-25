@@ -13,6 +13,7 @@ SpekPyライブラリを使用してESAK（Entrance Surface Air Kerma）とそ�
 - **対話的可視化**: スペクトル、線量、ビーム品質の視覚的表示
 - **データエクスポート**: CSV、JSON、テキストレポート形式での結果保存
 - **装置・プロトコール記録**: 装置名やプロトコール名の記録機能
+- **装置自動設定**: プルダウン選択による装置パラメータの自動適用
 
 ## 📋 入力パラメータ
 
@@ -28,8 +29,20 @@ SpekPyライブラリを使用してESAK（Entrance Surface Air Kerma）とそ�
 - **ファントム材質**: 水（BSF計算用）
 
 ### 装置・プロトコール情報
-- **装置名**: X線装置の製造会社・型番
+- **装置選択**: プルダウンから事前定義装置を選択、またはカスタム入力
 - **プロトコール名**: 検査プロトコールの名称
+
+#### 🏥 事前定義装置
+アプリケーションには以下の4つの装置が事前設定されており、選択すると自動的にアノード角度とフィルタ設定が適用されます：
+
+| 装置名                   | アノード角度 | フィルタ1 | 厚さ (mm) |
+| ------------------------ | ------------ | --------- | --------- |
+| 1,2撮影室: RAD speed Pro | 16°          | Al        | 3.0       |
+| 3撮影室: RAD speed Pro   | 16°          | Al        | 3.0       |
+| 歯科撮影装置ALULA        | 12.5°        | Al        | 2.6       |
+| Varian kV Imager         | 14°          | Al        | 3.3       |
+
+**注意**: 「その他（カスタム入力）」を選択すると、任意の装置名を入力でき、パラメータは手動設定となります。
 
 ## 🚀 インストールと使用方法
 
@@ -66,10 +79,17 @@ clinical_xray_app/
 ├── esak_calculator.py       # ESAK計算コアモジュール
 ├── visualization.py         # データ可視化モジュール
 ├── data_export.py          # データエクスポート機能
-├── simple_test.py          # 基本機能テスト
-├── test_modules.py         # 包括的テスト（要依存関係）
+├── device_config.py         # 装置設定管理モジュール
+├── main.py                 # エントリーポイント
 ├── pyproject.toml          # uvプロジェクト設定
 ├── uv.lock                 # 依存関係ロックファイル
+├── tests/                  # テストファイル（Git除外対象）
+│   ├── simple_test.py      # 基本機能テスト
+│   ├── test_app_integration.py # アプリケーション統合テスト
+│   ├── test_device_config.py   # 装置設定テスト
+│   ├── test_filter_issue.py    # フィルタ機能テスト
+│   ├── test_modules.py         # 包括的テスト（要依存関係）
+│   └── test_streamlit_fix.py   # Streamlit互換性テスト
 └── exports/                # エクスポートファイル保存用（自動作成）
 ```
 
@@ -169,12 +189,43 @@ import spekpy as sp
 - 平坦なファントム表面を仮定
 - 照射野形状は円形を仮定
 
+## 🏥 装置設定管理
+
+### 装置設定の追加・変更方法
+
+装置設定は `device_config.py` ファイルで一元管理されています。新しい装置の追加や既存装置の設定変更は以下の手順で行えます：
+
+#### 新装置の追加
+```python
+# device_config.py の _load_device_configurations() メソッド内に追加
+"新装置名": DeviceConfiguration(
+    name="新装置名",
+    anode_angle=15.0,           # アノード角度（度）
+    filter_material="Al",       # フィルタ材質
+    filter_thickness=2.5,       # フィルタ厚さ（mm）
+    description="装置の説明"     # 装置の詳細説明
+)
+```
+
+#### 既存装置の設定変更
+1. `device_config.py` を開く
+2. 該当装置の設定値を変更
+3. アプリケーションを再起動
+
+### 設定可能なパラメータ
+- **name**: 装置名（日本語対応）
+- **anode_angle**: アノード角度（5.0-20.0°）
+- **filter_material**: フィルタ材質（"Al", "Cu", "Be", "Air"）
+- **filter_thickness**: フィルタ厚さ（0.0-50.0 mm）
+- **description**: 装置の説明（オプション）
+
 ### 支援される検査タイプ
 
-#### プリセット設定
-- **胸部X線**: 120kVp, Al 2.5mm フィルタ
-- **腹部X線**: 大線量設定、Al 3.0mm フィルタ
-- **マンモグラフィ**: Mo ターゲット、Be + Al フィルタ
+#### 事前設定装置による最適化
+- **1,2撮影室: RAD speed Pro**: 一般撮影用、Al 3.0mm フィルタ
+- **3撮影室: RAD speed Pro**: 一般撮影用、Al 3.0mm フィルタ
+- **歯科撮影装置ALULA**: 歯科撮影専用、薄いフィルタ（Al 2.6mm）
+- **Varian kV Imager**: 画像誘導放射線治療用、Al 3.3mm フィルタ
 
 ## 📊 出力結果
 
@@ -235,12 +286,20 @@ import spekpy as sp
 
 ### テストの実行
 
+テストファイルは `tests/` ディレクトリに格納されています（Gitリポジトリから除外）：
+
 ```bash
 # 基本機能テスト（依存関係なしでも実行可能）
-python simple_test.py
+python tests/simple_test.py
+
+# 装置設定テスト
+python tests/test_device_config.py
+
+# アプリケーション統合テスト
+python tests/test_app_integration.py
 
 # 完全なテスト（全依存関係が必要）
-python test_modules.py
+python tests/test_modules.py
 ```
 
 ### バリデーション
@@ -288,7 +347,11 @@ python test_modules.py
    uv add matplotlib
    ```
 
-3. **メモリ不足エラー**
+3. **装置パラメータが自動設定されない**
+   - 装置選択を「その他（カスタム入力）」以外に変更
+   - ページをリフレッシュして再選択
+
+4. **メモリ不足エラー**
    - スペクトルの分解能を下げる
    - フィルタの枚数を減らす
 
